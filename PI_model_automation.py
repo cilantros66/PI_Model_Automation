@@ -14,6 +14,8 @@ import xlwings as xw
 import mikeio
 from PI_model_automation_variables import * #import everything
 
+df_input_all = pd.read_excel(inputsheet_path)
+
 if generate_pi:
     timestep_dict = {}
     timestep_dict["5m"]=300
@@ -27,9 +29,7 @@ if generate_pi:
     pi_dict['Rainfall'] = '"total","event-weighted"'
     pi_dict['Flow'] = '"total","event-weighted"'
     
-    df = pd.read_excel(inputsheet_path)
-    
-    for index, row in df.iterrows():
+    for index, row in df_input_all.iterrows():
         
         # Create workbook and worksheet
         wb = Workbook()
@@ -105,3 +105,74 @@ if generate_pi:
     #     Ctrl + / the above line for debugging only
     
         print(f"Excel file '{file_path}' has been created!!")
+        
+# Tool 2: Generate dfs0 files
+        
+if generate_dfs0:
+    for dfs0_path in list(df_input_all["DFS0 Path"].unique()):
+        df_input = df_input_all[df_input_all["DFS0 Path"]==dfs0_path]
+        
+        #Should be moved out of this loop so multiple PI sheets can go into 1 dfs0
+        dfs = mikeio.read(dfs0_path)
+        dfs_df = dfs.to_dataframe()
+        
+        for index, row in df_input.iterrows():
+            if not pd.isna(row.Tag):
+                name = row["Name"]
+                var_type = row["Type"]
+                pi_file_path = output_folder + "\\" + name + "-" + var_type + ".xlsx"
+                print(pi_file_path)
+    
+                # read in input pi spreadsheet
+                pi_df = pd.read_excel(pi_file_path, skiprows = 4)
+    
+    
+                unit = pi_df.iloc[2, 1]
+                pi_df.drop(pi_df.index[:4], inplace = True)
+                pi_df.reset_index(drop = True, inplace = True)
+                pi_df.rename(columns = {"Name":"DateTimeInitial"}, inplace = True)
+                pi_df['DateTime'] = pd.to_datetime(pi_df.DateTimeInitial, errors='coerce')
+                pi_df[name] = pd.to_numeric(pi_df[name], errors='coerce').fillna(0)
+                pi_df.dropna(inplace=True)
+                pi_df.drop(columns=['DateTimeInitial'],inplace=True)
+                
+                if not pd.isna(row['DFS0 Item 1 Addition']):
+                    pi_df[name] = pi_df[name] + row['DFS0 Item 1 Addition']
+                
+                if not pd.isna(row['DFS0 Item 1 Multiplier']):
+                    pi_df[name] = pi_df[name] * row['DFS0 Item 1 Multiplier']
+                    
+                
+                pi_df.rename(columns={name:name + '_Transfer'},inplace=True)
+                
+    
+    
+    
+    
+                pi_end_time = pi_df.DateTime.max()
+                rng = pd.date_range(dfs_df.index.min(),pi_end_time,freq='300s')
+    
+                #join df with dfs_df by DateTime, then transfer the VW14 values from df to dfs_df. 
+    
+    
+    
+                #Make sure it is an outer join to maintain all dfs0 times in the dfs_df
+    
+    
+                ix = pd.DatetimeIndex(rng)
+                dfs_df = dfs_df.reindex(ix)
+                dfs_df['DateTime'] = dfs_df.index
+    
+                dfs_df = pd.merge(dfs_df,pi_df,how='left',on=['DateTime'])
+    
+                dfs_df.set_index('DateTime',inplace=True)
+    
+                dfs_df[name] = dfs_df[name].fillna(dfs_df[name + '_Transfer'])
+    
+                dfs_df.drop(columns=[name + '_Transfer'],inplace=True)
+    
+        dfs_df.to_dfs0(f"{output_folder}\\{name}_Extended.dfs0", 
+                    items=dfs.items, 
+                    title=f"{name} Extended21"
+                )
+    
