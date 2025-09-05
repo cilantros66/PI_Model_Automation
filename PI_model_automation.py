@@ -5,7 +5,7 @@
 #            -Added option to make new dfs0 (without extending existing).
 #            -Fill with delete value, not 0 and do not do addition/multiplication on delete value
 #            -Note new rainfall will give an error because rainfall depth + step accumulated fails but that is what it should be.
-
+# Version 3: -Remove first instance of any duplicate time (daylight savings shift)
 
 import openpyxl
 from openpyxl import Workbook
@@ -41,7 +41,7 @@ if generate_pi:
     
     dfs_dict = {}
     dfs_dict['HGL'] = [EUMType.Water_Level,DataValueType.Instantaneous]
-    dfs_dict['Rainfall'] = [EUMType.Rainfall_Depth,DataValueType.StepAccumulated]#This gives an error but better than wrong value. To be reported.
+    dfs_dict['Rainfall'] = [EUMType.Rainfall_Depth,DataValueType.StepAccumulated]#This gives an error but better than wrong value. To be researched.
     dfs_dict['Flow'] = [EUMType.Discharge,DataValueType.Instantaneous]
     
     for index, row in df_input_all.iterrows():
@@ -158,6 +158,7 @@ if generate_dfs0:
                 pi_df[name] = pd.to_numeric(pi_df[name], errors='coerce').fillna(delete_value)
                 pi_df.dropna(inplace=True)
                 pi_df.drop(columns=['DateTimeInitial'],inplace=True)
+                pi_df = pi_df[~pi_df.DateTime.duplicated(keep='last')] #Delete first hour at daylight savings shift
                 
                 if not pd.isna(row['DFS0 Item 1 Addition']):
                     pi_df[name] = np.where(pi_df[name] != delete_value, pi_df[name] + row['DFS0 Item 1 Addition'], pi_df[name])
@@ -191,7 +192,7 @@ if generate_dfs0:
                     item = ItemInfo(f'{name} - {var_type}',eum_type)
                     items = [item]
                     pi_df.set_index('DateTime',inplace=True)
-                    pi_df.to_dfs0(f"{output_folder}\\{name} - {var_type}.dfs0",
+                    pi_df.to_dfs0(f"{output_folder}\\{name}_{var_type}.dfs0",
                                   items=[item],title=name)
                     
 
